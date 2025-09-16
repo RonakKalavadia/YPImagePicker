@@ -163,10 +163,7 @@ internal final class YPLibraryVC: UIViewController, YPPermissionCheckable {
     func multipleSelectionButtonTapped() {
         // If no items, than preventing multiple selection
         guard mediaManager.hasResultItems else {
-            if #available(iOS 14, *) {
-                PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: self)
-            }
-
+            PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: self)
             return
         }
 
@@ -228,32 +225,38 @@ internal final class YPLibraryVC: UIViewController, YPPermissionCheckable {
         }
     }
     
+
     func refreshMediaRequest() {
-        let options = buildPHFetchOptions()
-        var fetchedAssets = PHFetchResult<PHAsset>()
-
-        if let collection = mediaManager.collection {
-            fetchedAssets = PHAsset.fetchAssets(in: collection, options: options)
-        } else {
-            fetchedAssets = PHAsset.fetchAssets(with: options)
-        }
-
-        var filteredAssets = [PHAsset]()
-        fetchedAssets.enumerateObjects { (asset, id, stop) in
-            if YPConfig.library.onlyImagesWithLocation {
-                if asset.location != nil {
-                    filteredAssets.append(asset)
-                } else {
-                    print("location not found")
-                }
+        // calls to fetchAssets can take a while for large libraries and we don't want to block the main thread
+        DispatchQueue.global().async {
+            let options = self.buildPHFetchOptions()
+            var fetchedAssets = PHFetchResult<PHAsset>()
+            
+            if let collection = self.mediaManager.collection {
+                fetchedAssets = PHAsset.fetchAssets(in: collection, options: options)
             } else {
-                filteredAssets.append(asset)
+                fetchedAssets = PHAsset.fetchAssets(with: options)
             }
+            
+            var filteredAssets = [PHAsset]()
+            fetchedAssets.enumerateObjects { (asset, id, stop) in
+                if YPConfig.library.onlyImagesWithLocation {
+                    if asset.location != nil {
+                        filteredAssets.append(asset)
+                    } else {
+                        print("location not found")
+                    }
+                } else {
+                    filteredAssets.append(asset)
+                }
+            }
+            let collection = PHAssetCollection.transientAssetCollection(with: filteredAssets, title: "Assets with location data")
+            let fetchResult = PHAsset.fetchAssets(in: collection, options: nil)
+            self.mediaManager.fetchResult = fetchResult
         }
-        let collection = PHAssetCollection.transientAssetCollection(with: filteredAssets, title: "Assets with location data")
-        let fetchResult = PHAsset.fetchAssets(in: collection, options: nil)
-        mediaManager.fetchResult = fetchResult
-        
+    }
+    
+    private func refreshMediaRequestAfterFetch() {
         if mediaManager.hasResultItems,
         let firstAsset = mediaManager.getAsset(at: 0) {
             changeAsset(firstAsset)
